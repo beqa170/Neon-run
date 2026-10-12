@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#070817">
+<title>NEON RUN</title>
+<style>
+:root{--cyan:#36f5ff;--pink:#ff36d7;--bg:#070817;--panel:#10142b;--muted:#a9b5d7}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;background:var(--bg);color:#f5f7ff;font-family:system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden;touch-action:manipulation}
+button{font:inherit;color:inherit;border:1px solid var(--cyan);background:#091529;border-radius:12px;padding:12px 16px;font-weight:800;letter-spacing:.04em;box-shadow:0 0 12px #36f5ff22;cursor:pointer;touch-action:manipulation}
+button:active{transform:scale(.97);background:#13324b}
+button.primary{background:linear-gradient(110deg,#00bfe9,#9b2dff);border-color:#8efaff}
+button.pink{border-color:var(--pink)}
+#app{height:100dvh;width:100%;max-width:780px;margin:auto;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 10px env(safe-area-inset-bottom);gap:8px}
+header{display:flex;justify-content:space-between;align-items:center;padding:5px 3px}
+.logo{font-weight:1000;font-style:italic;font-size:clamp(24px,6vw,36px);line-height:1;color:var(--cyan);text-shadow:3px 3px 0 var(--pink),0 0 18px #36f5ff66;letter-spacing:.04em}
+.sub{font-size:10px;color:var(--muted);letter-spacing:.22em}
+#hud{display:none;grid-template-columns:repeat(4,1fr);gap:5px}
+.stat{background:#10142b;border:1px solid #27345e;border-radius:9px;padding:7px 5px;text-align:center;font-size:11px;color:var(--muted)}
+.stat b{display:block;font-size:16px;color:white}
+#gameWrap{position:relative;flex:1;min-height:230px;max-height:62vh;border:1px solid #254f76;border-radius:14px;overflow:hidden;background:#080a1a;box-shadow:0 0 20px #00d9ff15}
+canvas{display:block;width:100%;height:100%;image-rendering:pixelated;touch-action:none}
+#overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:linear-gradient(180deg,#07081755,#070817cc)}
+.card{width:min(100%,400px);max-height:100%;overflow:auto;background:#090d20ed;border:1px solid #36f5ff99;border-radius:16px;padding:20px;text-align:center;box-shadow:0 0 28px #00d9ff20}
+.card h1{margin:0 0 6px;font-size:clamp(28px,8vw,46px);font-style:italic;line-height:1;color:var(--cyan);text-shadow:3px 3px 0 var(--pink)}
+.card p{color:#c0cbe8;font-size:13px;line-height:1.5}
+.menuBtns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.menuBtns button:first-child{grid-column:1/-1}
+.small{font-size:11px;color:var(--muted);margin-top:12px}
+#controls{display:none;grid-template-columns:repeat(4,1fr);gap:7px}
+.ctrl{padding:14px 4px;font-size:13px;min-height:53px}
+#bottom{display:flex;justify-content:space-between;gap:8px;align-items:center;color:var(--muted);font-size:11px;padding:0 3px 3px}
+#bottom button{padding:7px 10px;font-size:11px}
+.hidden{display:none!important}
+@media(min-height:800px){#gameWrap{max-height:65vh}}
+@media(max-height:650px){#app{gap:5px}#gameWrap{max-height:54vh}.ctrl{min-height:44px;padding:9px 3px}.card{padding:13px}.card p{margin:7px 0}}
+</style>
+</head>
+<body>
+<div id="app">
+<header><div><div class="logo">NEON RUN</div><div class="sub">RUN · JUMP · FIGHT · SURVIVE</div></div><button id="soundBtn" aria-label="Toggle sound">♪ ON</button></header>
+<div id="hud">
+ <div class="stat">DISTANCE<b id="distance">0 m</b></div>
+ <div class="stat">CRYSTALS<b id="crystals">0</b></div>
+ <div class="stat">ENERGY<b id="energy">100%</b></div>
+ <div class="stat">BEST<b id="best">0 m</b></div>
+</div>
+<div id="gameWrap">
+ <canvas id="game" width="360" height="520" aria-label="NEON RUN game"></canvas>
+ <div id="overlay">
+  <div class="card" id="menuCard">
+   <h1>NEON RUN</h1><p>A neon-soaked pixel runner. Dodge hazards, smash drones, collect energy crystals.</p>
+   <div class="menuBtns">
+    <button class="primary" id="startLevels">▶ STORY LEVELS</button>
+    <button id="startEndless">∞ ENDLESS RUN</button>
+    <button id="upgradesBtn">⬡ UPGRADES</button>
+    <button id="howBtn">HOW TO PLAY</button>
+   </div>
+   <div class="small">Your best score and crystals are saved on this device.</div>
+  </div>
+ </div>
+</div>
+<div id="controls">
+ <button class="ctrl" id="jumpBtn">⬆ JUMP</button>
+ <button class="ctrl" id="slideBtn">⬇ SLIDE</button>
+ <button class="ctrl pink" id="attackBtn">⚡ ATTACK</button>
+ <button class="ctrl" id="pauseBtn">Ⅱ PAUSE</button>
+</div>
+<div id="bottom"><span id="modeLabel">Choose a mode to begin</span><button id="menuBtn" class="hidden">MENU</button></div>
+</div>
+<script>
+(()=>{
+'use strict';
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+ctx.imageSmoothingEnabled=false;
+const $=id=>document.getElementById(id);
+const W=360,H=520,ground=422;
+let state='menu',mode='levels',level=0,dist=0,runCrystals=0,energy=100,speed=3.0,frame=0,spawnTimer=0,shake=0,paused=false,sound=true;
+let obstacles=[],crystalItems=[],particles=[],player={x:67,y:ground-42,w:25,h:42,vy:0,onGround:true,sliding:0,attack:0,invuln:0};
+let totalCrystals=Number(localStorage.getItem('nr_crystals')||0),best=Number(localStorage.getItem('nr_best')||0),upgradeLevel=Number(localStorage.getItem('nr_upgrade')||0);
+const levels=[
+ {name:'NEON CITY',sky:'#10103a',far:'#252060',near:'#18163e',accent:'#ff36d7',goal:650},
+ {name:'THE FACTORY',sky:'#101d34',far:'#17475a',near:'#122c42',accent:'#36f5ff',goal:850},
+ {name:'SKY DISTRICT',sky:'#210e3e',far:'#43205f',near:'#251345',accent:'#ff8b36',goal:1050}
+];
+function resize(){const dpr=Math.min(devicePixelRatio||1,2),r=canvas.getBoundingClientRect();canvas.width=Math.round(r.width*dpr);canvas.height=Math.round(r.height*dpr);ctx.setTransform(canvas.width/W,0,0,canvas.height/H,0,0);ctx.imageSmoothingEnabled=false}
+addEventListener('resize',resize);resize();
+function rect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h))}
+function text(t,x,y,size=12,c='#fff',align='left'){ctx.fillStyle=c;ctx.font=`bold ${size}px monospace`;ctx.textAlign=align;ctx.fillText(t,x,y)}
+function rand(a,b){return a+Math.random()*(b-a)}
+function levelData(){return levels[Math.min(level,2)]}
+function drawCity(){
+ const l=levelData();rect(0,0,W,H,l.sky);
+ // moon / glowing sun
+ ctx.fillStyle=l.accent;ctx.globalAlpha=.16;ctx.beginPath();ctx.arc(270,105,57,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+ for(let layer=0;layer<2;layer++){
+  const base=layer===0?300:365,step=layer===0?39:30,offset=(frame*(layer?.65:.28))%step;
+  for(let x=-step-offset;x<W+step;x+=step){
+   const seed=Math.floor((x+offset+1000)/step),bh=layer===0?65+((seed*37+level*17)%90):42+((seed*19+level*31)%66);
+   const bw=step-3;rect(x,base-bh,bw,bh,layer===0?l.far:l.near);
+   rect(x+3,base-bh+4,2,2,l.accent);
+   for(let wy=base-bh+12;wy<base-8;wy+=12)for(let wx=x+6;wx<x+bw-3;wx+=9)if(((wx+wy+seed)%4)!==0)rect(wx,wy,3,4,((wx+wy)%3===0)?'#ff36d7':'#36f5ff');
+  }
+ }
+ // floor
+ rect(0,ground,W,H-ground,'#0c1125');rect(0,ground,W,4,l.accent);rect(0,ground+5,W,2,'#24395b');
+ for(let x=-(frame*speed%42);x<W;x+=42){rect(x,ground+25,22,3,'#183653');rect(x+25,ground+54,8,2,'#261d51')}
+}
+function drawPlayer(){
+ let p=player,py=p.y;
+ if(p.invuln>0&&Math.floor(frame/4)%2===0)return;
+ // trail
+ rect(p.x-10,py+15,8,4,'#ff36d788');rect(p.x-6,py+22,5,3,'#36f5ff88');
+ if(p.sliding>0){
+  rect(p.x,py+18,29,15,'#171b3d');rect(p.x+7,py+13,14,10,'#00cce8');rect(p.x+18,py+7,11,10,'#ffd5b0');rect(p.x+23,py+8,7,5,'#10142b');rect(p.x+3,py+30,13,5,'#ff36d7');rect(p.x+17,py+30,13,5,'#36f5ff');
+ }else{
+  // legs animated
+  const run=Math.floor(frame/4)%2;
+  rect(p.x+6,py+27,8,12,run?'#ff36d7':'#36f5ff');rect(p.x+14,py+29,8,10,run?'#36f5ff':'#ff36d7');
+  rect(p.x+4,py+37,12,5,'#36f5ff');rect(p.x+15,py+37,12,5,'#ff36d7');
+  rect(p.x+4,py+11,18,19,'#161a39');rect(p.x+2,py+15,7,13,'#00cfe8');rect(p.x+17,py+16,7,12,'#ff36d7');
+  rect(p.x+8,py+1,17,15,'#ffd3b0');rect(p.x+6,py-1,18,8,'#10142b');rect(p.x+20,py+5,6,5,'#36f5ff');
+ }
+ if(p.attack>0){rect(p.x+26,py+12,30,5,'#36f5ff');rect(p.x+39,py+6,15,17,'#fff');rect(p.x+43,py+9,10,11,'#ff36d7');}
+ if(p.invuln>0){ctx.strokeStyle='#36f5ff';ctx.lineWidth=2;ctx.strokeRect(p.x-5,py-5,38,p.h+10)}
+}
+function drawItems(){
+ for(const o of obstacles){
+  if(o.type==='crate'){rect(o.x,o.y,26,28,'#a63b9b');rect(o.x+3,o.y+3,20,22,'#34204f');rect(o.x+7,o.y+7,12,3,'#ff36d7');rect(o.x+7,o.y+15,12,3,'#36f5ff')}
+  if(o.type==='laser'){rect(o.x,o.y,7,45,'#263452');rect(o.x+3,o.y,2,45,'#36f5ff');rect(o.x+7,o.y+16,34,5,'#ff36d7');rect(o.x+7,o.y+14,34,2,'#fff')}
+  if(o.type==='drone'){rect(o.x+5,o.y+5,22,16,'#33245b');rect(o.x+9,o.y+8,14,8,'#ff36d7');rect(o.x,o.y+11,8,4,'#36f5ff');rect(o.x+24,o.y+11,8,4,'#36f5ff')}
+  if(o.type==='pit'){rect(o.x,ground,40,30,'#02030b');rect(o.x,ground,40,3,'#ff36d7')}
+ }
+ for(const c of crystalItems){const bob=Math.sin(frame*.13+c.x)*3;rect(c.x+4,c.y+bob,10,10,'#36f5ff');rect(c.x+7,c.y-3+bob,4,16,'#c8ffff');rect(c.x+2,c.y+3+bob,14,4,'#36f5ff')}
+ for(const q of particles){rect(q.x,q.y,3,3,q.c)}
+}
+function draw(){
+ drawCity();drawItems();drawPlayer();
+ if(state==='playing'){
+  // subtle speed streaks
+  if(speed>4)for(let i=0;i<5;i++){const x=(frame*13+i*79)%W;rect(x,110+i*39,rand(8,23),1,'#36f5ff44')}
+ }
+}
+function update(){
+ if(state!=='playing'||paused)return;
+ frame++;dist+=speed*.12;speed=Math.min(7.2,3+dist/500+(mode==='endless'?dist/1400:0));
+ if(player.vy!==0||!player.onGround){player.y+=player.vy;player.vy+=.55;if(player.y>=ground-player.h){player.y=ground-player.h;player.vy=0;player.onGround=true}}
+ if(player.sliding>0)player.sliding--;if(player.attack>0)player.attack--;if(player.invuln>0)player.invuln--;
+ spawnTimer--;
+ if(spawnTimer<=0){spawnTimer=Math.max(42,rand(74,112)-speed*4);let r=Math.random(),type=r<.38?'crate':r<.65?'laser':r<.84?'drone':'pit';if(type==='pit')obstacles.push({x:W+10,y:ground,w:40,h:30,type});else if(type==='laser')obstacles.push({x:W+10,y:ground-45,w:41,h:45,type});else if(type==='drone')obstacles.push({x:W+10,y:ground-83,w:32,h:22,type});else obstacles.push({x:W+10,y:ground-28,w:26,h:28,type});
+  if(Math.random()<.82)crystalItems.push({x:W+rand(30,100),y:ground-rand(65,130)});
+ }
+ obstacles.forEach(o=>o.x-=speed);crystalItems.forEach(c=>c.x-=speed);particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--});
+ obstacles=obstacles.filter(o=>o.x>-60);crystalItems=crystalItems.filter(c=>c.x>-20);particles=particles.filter(p=>p.life>0);
+ // collect crystals
+ for(let i=crystalItems.length-1;i>=0;i--){let c=crystalItems[i];if(c.x<player.x+player.w&&c.x+14>player.x&&c.y<player.y+player.h&&c.y+14>player.y){runCrystals++;energy=Math.min(100,energy+4);burst(c.x,c.y,'#36f5ff');crystalItems.splice(i,1);}}
+ // collision checks
+ for(let i=obstacles.length-1;i>=0;i--){let o=obstacles[i],px=player.x,py=player.y,ph=player.sliding>0?22:player.h,top=player.sliding>0?py+17:py;
+  const hit=px+player.w-4>o.x&&px+4<o.x+o.w&&top+ph>o.y+2&&top<o.y+o.h;
+  if(hit){
+   if(player.attack>0&&o.type==='drone'){burst(o.x,o.y,'#ff36d7');obstacles.splice(i,1);energy=Math.max(0,energy-5);continue}
+   if(player.invuln>0){obstacles.splice(i,1);continue}
+   endRun();return;
+  }
+ }
+ // attack destroys drones in a short cone
+ if(player.attack>0){for(let i=obstacles.length-1;i>=0;i--){let o=obstacles[i];if(o.type==='drone'&&o.x>player.x&&o.x<player.x+80){burst(o.x,o.y,'#ff36d7');obstacles.splice(i,1);}}}
+ energy=Math.max(0,energy-.018);
+ if(mode==='levels'&&dist>=levelData().goal){levelComplete();return}
+ updateHUD();
+}
+function burst(x,y,c){for(let i=0;i<8;i++)particles.push({x,y,vx:rand(-2,2),vy:rand(-2,2),life:rand(8,20),c})}
+function jump(){if(state==='playing'&&!paused&&player.onGround){player.vy=-10.5;player.onGround=false;player.sliding=0}}
+function slide(){if(state==='playing'&&!paused&&player.onGround){player.sliding=27}}
+function attack(){const cost=Math.max(6,14-upgradeLevel*2);if(state==='playing'&&!paused&&energy>=cost){energy-=cost;player.attack=14;for(let i=0;i<5;i++)particles.push({x:player.x+30,y:player.y+rand(5,28),vx:rand(1,4),vy:rand(-2,2),life:12,c:'#36f5ff'})}}
+function updateHUD(){$('distance').textContent=Math.floor(dist)+' m';$('crystals').textContent=runCrystals;$('energy').textContent=Math.floor(energy)+'%';$('best').textContent=best+' m'}
+function showOverlay(title,body,buttons){
+ const overlay=$('overlay');overlay.classList.remove('hidden');overlay.innerHTML='';
+ const card=document.createElement('div');card.className='card';
+ const h=document.createElement('h1');h.textContent=title;card.appendChild(h);
+ const p=document.createElement('p');p.textContent=body;card.appendChild(p);
+ const grid=document.createElement('div');grid.className='menuBtns';
+ buttons.forEach(b=>{const btn=document.createElement('button');btn.textContent=b.label;if(b.primary)btn.classList.add('primary');if(b.pink)btn.classList.add('pink');btn.onclick=b.action;grid.appendChild(btn)});
+ card.appendChild(grid);overlay.appendChild(card);
+}
+function begin(which){
+ mode=which;state='playing';paused=false;dist=0;runCrystals=0;energy=100;speed=3;frame=0;spawnTimer=70;obstacles=[];crystalItems=[];particles=[];player={x:67,y:ground-42,w:25,h:42,vy:0,onGround:true,sliding:0,attack:0,invuln:0};
+ $('overlay').classList.add('hidden');$('hud').style.display='grid';$('controls').style.display='grid';$('menuBtn').classList.remove('hidden');$('modeLabel').textContent=which==='levels'?'LEVEL: '+levelData().name:'ENDLESS RUN';updateHUD();
+}
+function endRun(){
+ state='over';best=Math.max(best,Math.floor(dist));totalCrystals+=runCrystals;
+ localStorage.setItem('nr_best',best);localStorage.setItem('nr_crystals',totalCrystals);updateHUD();
+ $('controls').style.display='none';
+ showOverlay('GAME OVER',`Distance: ${Math.floor(dist)} m · Crystals: ${runCrystals} · Best: ${best} m`,[
+  {label:'↻ RETRY',primary:true,action:()=>begin(mode)},
+  {label:'MAIN MENU',action:menu}
+ ]);
+}
+function levelComplete(){
+ state='complete';best=Math.max(best,Math.floor(dist));totalCrystals+=runCrystals;localStorage.setItem('nr_best',best);localStorage.setItem('nr_crystals',totalCrystals);
+ $('controls').style.display='none';
+ const last=level>=2;
+ showOverlay(last?'DISTRICT CLEARED!':'LEVEL COMPLETE!',`You cleared ${levelData().name}. Distance: ${Math.floor(dist)} m · Crystals: ${runCrystals}.`,[
+  {label:last?'REPLAY CITY':'NEXT LEVEL',primary:true,action:()=>{if(last)level=0;else level++;begin('levels')}},
+  {label:'ENDLESS RUN',action:()=>begin('endless')},
+  {label:'MAIN MENU',action:menu}
+ ]);
+}
+function menu(){
+ state='menu';paused=false;$('hud').style.display='none';$('controls').style.display='none';$('menuBtn').classList.add('hidden');$('modeLabel').textContent='Choose a mode to begin';
+ $('overlay').classList.remove('hidden');$('overlay').innerHTML=`<div class="card" id="menuCard"><h1>NEON RUN</h1><p>A neon-soaked pixel runner. Dodge hazards, smash drones, collect energy crystals.</p><div class="menuBtns"><button class="primary" id="startLevels">▶ STORY LEVELS</button><button id="startEndless">∞ ENDLESS RUN</button><button id="upgradesBtn">⬡ UPGRADES</button><button id="howBtn">HOW TO PLAY</button></div><div class="small">Best: ${best} m · Lifetime crystals: ${totalCrystals}</div></div>`;
+ $('startLevels').onclick=()=>{level=0;begin('levels')};$('startEndless').onclick=()=>begin('endless');$('upgradesBtn').onclick=upgrades;$('howBtn').onclick=how;
+}
+function how(){showOverlay('HOW TO PLAY','Swipe UP to jump. Swipe DOWN to slide. Tap ATTACK to blast nearby drones (costs energy). Collect cyan crystals, avoid hazards, and survive as speed increases.',[
+ {label:'GOT IT',primary:true,action:menu},{label:'START RUN',action:()=>begin(mode)}
+])}
+function upgrades(){
+ showOverlay('UPGRADES',`Crystals collected across runs: ${totalCrystals}. Upgrade attack efficiency for 30 crystals per level. Current upgrade: ${upgradeLevel}.`,[
+ {label:'BUY UPGRADE',primary:true,action:()=>{let cost=30*(upgradeLevel+1);if(totalCrystals>=cost){totalCrystals-=cost;upgradeLevel++;localStorage.setItem('nr_crystals',totalCrystals);localStorage.setItem('nr_upgrade',upgradeLevel);energy=Math.min(100,energy+10);upgrades()}else showOverlay('NOT ENOUGH CRYSTALS',`You need ${cost} crystals. Play a run and collect more.`,[{label:'BACK',primary:true,action:menu}])}},
+ {label:'BACK',action:menu}
+ ])}
+function pause(){if(state!=='playing')return;paused=!paused;$('pauseBtn').textContent=paused?'▶ RESUME':'Ⅱ PAUSE';if(paused)showOverlay('PAUSED','Catch your breath, runner.',[{label:'RESUME',primary:true,action:()=>{$('overlay').classList.add('hidden');paused=false;$('pauseBtn').textContent='Ⅱ PAUSE'}},{label:'QUIT RUN',action:menu}]);else $('overlay').classList.add('hidden')}
+$('startLevels').onclick=()=>{level=0;begin('levels')};$('startEndless').onclick=()=>begin('endless');$('upgradesBtn').onclick=upgrades;$('howBtn').onclick=how;
+$('jumpBtn').addEventListener('pointerdown',e=>{e.preventDefault();jump()});$('slideBtn').addEventListener('pointerdown',e=>{e.preventDefault();slide()});$('attackBtn').addEventListener('pointerdown',e=>{e.preventDefault();attack()});$('pauseBtn').onclick=pause;$('menuBtn').onclick=menu;
+$('soundBtn').onclick=()=>{sound=!sound;$('soundBtn').textContent=sound?'♪ ON':'♪ OFF'};
+let touchStart=null;
+canvas.addEventListener('touchstart',e=>{const t=e.changedTouches[0];touchStart={x:t.clientX,y:t.clientY}},{passive:true});
+canvas.addEventListener('touchend',e=>{if(!touchStart)return;const t=e.changedTouches[0],dx=t.clientX-touchStart.x,dy=t.clientY-touchStart.y;if(Math.abs(dy)>24){if(dy<0)jump();else slide()}else if(Math.abs(dx)>35){if(dx>0)attack()}else if(state==='playing'){if(t.clientX>innerWidth*.68)attack();else jump()}touchStart=null},{passive:true});
+canvas.addEventListener('click',e=>{if(state==='playing'){const r=canvas.getBoundingClientRect();if(e.clientX-r.left>r.width*.72)attack();else jump()}});
+addEventListener('keydown',e=>{if(e.code==='ArrowUp'||e.code==='Space')jump();if(e.code==='ArrowDown')slide();if(e.code==='KeyX'||e.code==='KeyZ')attack();if(e.code==='Escape')pause()});
+function loop(){update();draw();requestAnimationFrame(loop)}
+menu();loop();
+})();
+</script>
+</body>
+</html>
